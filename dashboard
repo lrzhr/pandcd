@@ -1,0 +1,288 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import streamlit as st
+from babel.numbers import format_currency
+sns.set(style='dark')
+
+class AnalisisData:
+    def __init__(self, df):
+        self.df = df
+    def create_daily_orders_df(self):
+        daily_orders_df = self.df.resample(rule='D', on='order_purchase_timestamp').agg({
+            "order_id": "nunique",
+            "payment_value": "sum"
+        })
+        daily_orders_df = daily_orders_df.reset_index()
+        daily_orders_df.rename(columns={
+            "order_id": "order_total",
+            "payment_value": "revenue"
+        }, inplace=True)
+        
+        return daily_orders_df
+    
+    def create_sum_order_items_df(self):
+        sum_order_items_df = self.df.groupby("product_category_name_english")["product_id"].count().reset_index()
+        sum_order_items_df.rename(columns={
+            "product_id": "product_total"
+        }, inplace=True)
+        sum_order_items_df = sum_order_items_df.sort_values(by='product_total', ascending=False)
+
+        return sum_order_items_df
+
+    def estimated_time_df(self):
+        return self.df['estimated_time'].mean().days
+    
+    def actual_time_df(self):
+        return self.df['actual_time'].mean().days
+
+    def create_category_products_df(self):
+        category_products_df = self.df.groupby(by="product_category_name_english")["order_item_id"].sum() \
+            .sort_values(ascending=False).reset_index()
+        category_products_df.columns = ["product_category", "product_total"]
+
+        return category_products_df
+    
+    def create_payment_type_df(self):
+        payment_type_df = self.df.groupby(by="payment_type")["order_id"].nunique().reset_index()
+        payment_type_df.columns = ["payment_type", "order_total"]
+
+        return payment_type_df
+
+    def review_score_df(self):
+        review_customers_df = self.df['review_score'].value_counts().sort_values(ascending=True)
+        review_score_index = review_customers_df.sort_index(ascending=True).index[4]
+
+        return review_customers_df, review_score_index
+    
+    def create_customer_city_df(self):
+        city_customers_df = self.df.groupby(by='customer_city')["customer_id"].nunique().sort_values(ascending=False).head(5)
+        city_customers_df = city_customers_df.reset_index()
+        city_customers_df.columns = ["customer_city", "unique_customers"]
+
+        return city_customers_df
+
+    def create_customer_state_df(self):
+        state_customers_df = self.df.groupby(by='customer_state')["customer_id"].nunique().sort_values(ascending=False).head(5)
+        state_customers_df = state_customers_df.reset_index()
+        state_customers_df.columns = ["customer_state", "unique_customers"]
+
+        return state_customers_df
+
+    def create_seller_city_df(self):
+        city_seller_df = self.df.groupby(by='seller_city')["seller_id"].nunique().sort_values(ascending=False).head(5)
+        city_seller_df = city_seller_df.reset_index()
+        city_seller_df.columns = ["seller_city", "unique_sellers"]
+
+        return city_seller_df
+
+    def create_seller_state_df(self):
+        state_seller_df = self.df.groupby(by='seller_state')["seller_id"].nunique().sort_values(ascending=False).head(5)
+        state_seller_df = state_seller_df.reset_index()
+        state_seller_df.columns = ["seller_state", "unique_sellers"]
+
+        return state_seller_df
+
+all_ecommerce_df = pd.read_csv("data_ecommerce.csv")
+
+datetime_columns = ["order_purchase_timestamp", "order_approved_at", "order_delivered_carrier_date","order_delivered_customer_date","shipping_limit_date", "review_answer_timestamp"]
+all_ecommerce_df.sort_values(by="order_purchase_timestamp", inplace=True)
+all_ecommerce_df.reset_index(inplace=True)
+ 
+def clean_and_convert_to_timedelta(value):
+    cleaned_value = ''.join(filter(lambda x: x.isdigit() or x in [':', '.'], str(value)))
+    try:
+        return pd.to_timedelta(cleaned_value)
+    except ValueError:
+        return pd.NaT 
+
+all_ecommerce_df['actual_time'] = all_ecommerce_df['actual_time'].apply(lambda x: '0 days ' + str(x) if pd.notnull(x) and 'days' not in str(x) else str(x))
+all_ecommerce_df['estimated_time'] = all_ecommerce_df['estimated_time'].apply(lambda x: '0 days ' + str(x) if pd.notnull(x) and 'days' not in str(x) else str(x))
+
+all_ecommerce_df[['actual_time', 'estimated_time']] = all_ecommerce_df[['actual_time', 'estimated_time']].applymap(clean_and_convert_to_timedelta)
+
+for column in datetime_columns:
+    all_ecommerce_df[column] = pd.to_datetime(all_ecommerce_df[column])
+    
+min_date = all_ecommerce_df["order_purchase_timestamp"].min()
+max_date = all_ecommerce_df["order_purchase_timestamp"].max()
+ 
+with st.sidebar:
+    st.image("https://static.vecteezy.com/system/resources/previews/011/598/887/original/ecommerce-logo-icon-free-vector.jpg")
+    start_date, end_date = st.date_input(
+        label='Rentang Waktu',min_value=min_date,
+        max_value=max_date,
+        value=[min_date, max_date]
+    )
+
+main_df = all_ecommerce_df[(all_ecommerce_df["order_purchase_timestamp"] >= str(start_date)) & 
+                (all_ecommerce_df["order_purchase_timestamp"] <= str(end_date))]
+
+function = AnalisisData(main_df)
+daily_orders_df = function.create_daily_orders_df()
+sum_order_items_df = function.create_sum_order_items_df()
+estimated_time_df = function.estimated_time_df()
+actual_time_df = function.actual_time_df()
+category_products_df = function.create_category_products_df()
+review_customers_df, review_score_index = function.review_score_df()
+payment_type_df = function.create_payment_type_df ()
+city_customer_df = function.create_customer_city_df()
+state_seller_df = function.create_seller_city_df()
+city_seller_df = function.create_seller_state_df()
+
+st.header('Olist Dashboard 🛍️')
+
+st.subheader('Order Harian')
+
+col1, col2 = st.columns(2)
+
+with col1:
+    total_orders = daily_orders_df["order_total"].sum()
+    st.markdown(f"Total Order: **{total_orders}**")
+
+with col2:
+    total_revenue = format_currency(daily_orders_df["revenue"].sum(), "BRL", locale="pt_BR")
+    st.markdown(f"Total Revenue: **{total_revenue}**")
+
+fig, ax = plt.subplots(figsize=(16, 8))
+ax.plot(
+    daily_orders_df["order_purchase_timestamp"],
+    daily_orders_df["order_total"],
+    marker='o', 
+    linewidth=2,
+    color="#90CAF9"
+)
+ax.tick_params(axis='y', labelsize=20)
+ax.tick_params(axis='x', labelsize=15)
+ 
+st.pyplot(fig)
+
+all_ecommerce_df = pd.read_csv("data_ecommerce.csv")
+
+all_ecommerce_df['actual_time_original'] = all_ecommerce_df['actual_time']
+all_ecommerce_df['estimated_time_original'] = all_ecommerce_df['estimated_time']
+
+st.subheader('Rata-rata Waktu Pengiriman')
+st.set_option('deprecation.showPyplotGlobalUse', False)
+
+all_ecommerce_df['actual_time'] = pd.to_timedelta(all_ecommerce_df['actual_time'], errors='coerce')
+all_ecommerce_df['estimated_time'] = pd.to_timedelta(all_ecommerce_df['estimated_time'], errors='coerce')
+
+avg_actual_delivery = all_ecommerce_df['actual_time'].mean().days
+avg_estimated_delivery = all_ecommerce_df['estimated_time'].mean().days
+
+fig, ax = plt.subplots(figsize=(8, 6))
+ax.bar(["Estimasi", "Sebenarnya"], [avg_estimated_delivery, avg_actual_delivery], color=["#72BCD4", "#D3D3D3"])
+ax.set_title("Perbandingan Rata-rata Waktu Estimasi dan Sebenarnya Pesanan Sampai", fontsize=12)
+ax.set_ylabel("Rata-rata waktu (hari)")
+
+st.pyplot(fig)
+
+all_ecommerce_df['actual_time'] = all_ecommerce_df['actual_time_original']
+all_ecommerce_df['estimated_time'] = all_ecommerce_df['estimated_time_original']
+
+st.write("Rata-rata waktu estimasi pesanan sampai di tangan pelanggan:", avg_estimated_delivery, "hari")
+st.write("Rata-rata waktu sebenarnya pesanan sampai di tangan pelanggan:", avg_actual_delivery, "hari")
+
+st.subheader('Kategori Produk Terlaris')
+st.set_option('deprecation.showPyplotGlobalUse', False)
+
+category_products_df = all_ecommerce_df.groupby(by="product_category_name_english").order_item_id.sum() \
+    .sort_values(ascending=False).reset_index()
+category_products_df.columns = ["product_category", "product_total"]
+
+fig, ax = plt.subplots(figsize=(20, 6))
+
+colors = ["#72BCD4", "#D3D3D3", "#D3D3D3", "#D3D3D3", "#D3D3D3"]
+
+sns.barplot(x="product_category", y="product_total", data=category_products_df.head(5), hue="product_category", palette=colors, ax=ax, dodge=False, legend=False)
+ax.set_ylabel("Jumlah Produk")
+ax.set_xlabel("Kategori Produk", fontsize=12)
+ax.set_title("Kategori Produk Terlaris", fontsize=15)
+ax.tick_params(axis='y', labelsize=12)
+ax.tick_params(axis='x', labelsize=12)
+
+st.pyplot(fig)
+
+
+st.subheader('Tipe Pembayaran')
+st.set_option('deprecation.showPyplotGlobalUse', False)
+
+payment_type_df = all_ecommerce_df.groupby(by="payment_type").order_id.nunique().reset_index()
+payment_type_df.columns = ["payment_type", "order_total"]
+
+fig, ax = plt.subplots(figsize=(12, 12))
+colors = ["#72BCD4", "#4B86B4", "#6B9AC4", "#CDE6F7", "#ADD2E6"]
+
+ax.pie(payment_type_df["order_total"], labels=payment_type_df["payment_type"], autopct='%1.1f%%', startangle=90, colors=colors)
+ax.set_title("Proporsi Jenis Pembayaran menurut Total Pesanan", fontsize=15)
+
+st.pyplot(fig)
+st.set_option('deprecation.showPyplotGlobalUse', False)
+
+review_customers_df = all_ecommerce_df['review_score'].value_counts().sort_values(ascending=True)
+review_score_index = review_customers_df.sort_index(ascending=True).index[4]
+
+st.subheader('Skor Review')
+fig, ax = plt.subplots(figsize=(8, 6))
+colors = ["#72BCD4" if review_score == review_score_index else "#D3D3D3" for review_score in review_customers_df.index]
+
+sns.barplot(x=review_customers_df.index, y=review_customers_df.values, order=review_customers_df.index, palette=colors, hue=review_customers_df.index, legend=False, ax=ax)
+ax.set_title("Skor Review dari Pelanggan", fontsize=15)
+ax.set_xlabel("Skor")
+ax.set_ylabel("Jumlah")
+
+st.pyplot(fig)
+
+st.subheader("Demografi Pelanggan")
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(20, 6))
+
+city_customers = all_ecommerce_df.groupby(by='customer_city').customer_id.nunique().sort_values(ascending=False).head(5)
+state_customers = all_ecommerce_df.groupby(by='customer_state').customer_id.nunique().sort_values(ascending=False).head(5)
+
+colors = ["#72BCD4", "#D3D3D3", "#D3D3D3", "#D3D3D3", "#D3D3D3"]
+
+sns.barplot(x=city_customers.values, y=city_customers.index, hue=city_customers.index, dodge=False, legend=False, palette=colors, ax=ax[0])
+ax[0].set_ylabel(None)
+ax[0].set_xlabel(None, fontsize=12)
+ax[0].set_title("Kota", loc="center", fontsize=15)
+ax[0].tick_params(axis='y', labelsize=12)
+
+sns.barplot(x=state_customers.values, y=state_customers.index, hue=state_customers.index, dodge=False, legend=False, palette=colors, ax=ax[1])
+ax[1].set_ylabel(None)
+ax[1].set_xlabel(None, fontsize=12)
+ax[1].invert_xaxis()
+ax[1].yaxis.set_label_position("right")
+ax[1].yaxis.tick_right()
+ax[1].set_title("Negara", loc="center", fontsize=15)
+ax[1].tick_params(axis='y', labelsize=12)
+
+plt.suptitle("5 Kota dan Negara dengan Pelanggan Terbanyak", fontsize=18)
+
+st.pyplot(fig)
+
+st.subheader("Demografi Penjual")
+
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(20, 6))
+city_sellers = all_ecommerce_df.groupby(by='seller_city').seller_id.nunique().sort_values(ascending=False).head(5)
+state_sellers = all_ecommerce_df.groupby(by='seller_state').seller_id.nunique().sort_values(ascending=False).head(5)
+
+colors = ["#72BCD4", "#D3D3D3", "#D3D3D3", "#D3D3D3", "#D3D3D3"]
+
+sns.barplot(x=city_sellers.values, y=city_sellers.index, hue=city_sellers.index, dodge=False, legend=False, palette=colors, ax=ax[0])
+ax[0].set_ylabel(None)
+ax[0].set_xlabel(None, fontsize=12)
+ax[0].set_title("Kota", loc="center", fontsize=15)
+ax[0].tick_params(axis='y', labelsize=12)
+
+sns.barplot(x=state_sellers.values, y=state_sellers.index, hue=state_sellers.index, dodge=False, legend=False, palette=colors, ax=ax[1])
+ax[1].set_ylabel(None)
+ax[1].set_xlabel(None, fontsize=12)
+ax[1].invert_xaxis()
+ax[1].yaxis.set_label_position("right")
+ax[1].yaxis.tick_right()
+ax[1].set_title("Negara", loc="center", fontsize=15)
+ax[1].tick_params(axis='y', labelsize=12)
+
+plt.suptitle("5 Kota dan Negara dengan Penjual Terbanyak", fontsize=18)
+st.pyplot(fig)
